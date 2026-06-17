@@ -1,8 +1,9 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 function YearView() {
-  const currentYear = new Date().getFullYear();
+  const params = useParams();
+  const currentYear = params.year ? parseInt(params.year, 10) : new Date().getFullYear();
   const today = new Date();
   const navigate = useNavigate();
   const monthNames = [
@@ -11,6 +12,8 @@ function YearView() {
   ];
   const dayHeaders = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+
+  //  This function generates the days for a given month and year, including empty cells for alignment. 
   const generateMonthDays = (month, year) => {
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -31,6 +34,8 @@ function YearView() {
     return days;
   };
 
+
+  // checks if a specific day cell is today
   const isToday = (day, month) => {
     return (
       day === today.getDate() &&
@@ -39,10 +44,12 @@ function YearView() {
     );
   };
 
+  //when a month is clicked we navigate to the MonthView for that specific month and year. 
   const handleMonthClick = (monthIndex) => {
     navigate(`/month/${monthIndex}/${currentYear}`);
   };
-
+// It creats a grid of 12 months and for each month it generates the days and displays them in a mini calendar format. 
+// Also highlights the current day if it falls whithin that month.
   return (
     <div className="bg-peach min-h-screen p-8">
       <div className="max-w-7xl mx-auto">

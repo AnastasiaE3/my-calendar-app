@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { safeFetchJson } from '../api';
 
 function MonthView() {
   const params = useParams();
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // sending user to a different page when i click on something
   const today = new Date();
-  
+  const [appointmentDays, setAppointmentDays] = useState([]);
+
+  //a ternary operator to get month and year from URL params or use current month and year.
   // Get month and year from URL params or use current month/year
-  let displayMonth = params.month ? parseInt(params.month) : today.getMonth();
+  //parseInt - converts a string to a number
+  let displayMonth = params.month ? parseInt (params.month) : today.getMonth();
   let displayYear = params.year ? parseInt(params.year) : today.getFullYear();
 
   const monthNames = [
@@ -17,13 +21,20 @@ function MonthView() {
   const dayHeaders = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
   // Get first day of month (0 = Sunday, need to adjust for Monday start)
+  // creats the first date of the month and asks what day of the week it falls on. This tells us how many empty cells to add before the 1st.
   const firstDay = new Date(displayYear, displayMonth, 1).getDay();
+  // Get number of days in month by creating a date for the 0th day of the next month, which gives us the last day of the month we want.
   const daysInMonth = new Date(displayYear, displayMonth + 1, 0).getDate();
 
   // Adjust for Monday start (Monday = 0)
+  //shifting the days so that Monday is 0. And it is a first day on the week
   let adjustedFirstDay = firstDay - 1;
   if (adjustedFirstDay === -1) adjustedFirstDay = 6;
 
+
+  //This builds the array of cells for the calendar grid
+  // starts as an empty array 
+  // first loop adds empty cells. Second loop adds actual day numbers.
   const days = [];
   // Add empty cells for days before the month starts
   for (let i = 0; i < adjustedFirstDay; i++) {
@@ -33,7 +44,7 @@ function MonthView() {
   for (let i = 1; i <= daysInMonth; i++) {
     days.push(i);
   }
-
+// all of them should be true to be today
   const isToday = (day) => {
     return (
       day === today.getDate() &&
@@ -42,6 +53,30 @@ function MonthView() {
     );
   };
 
+  useEffect(() => {
+    const fetchMonthAppointments = async () => {
+      const appointments = await safeFetchJson(
+        `http://localhost:8080/api/appointments?month=${displayMonth}&year=${displayYear}`,
+        {},
+        []
+      );
+      const daysWithAppointments = Array.isArray(appointments)
+        ? appointments
+            .map((apt) => {
+              if (!apt || !apt.date) return null;
+              const date = new Date(apt.date);
+              if (Number.isNaN(date.getTime())) return null;
+              return date.getDate();
+            })
+            .filter((day) => typeof day === 'number')
+        : [];
+      setAppointmentDays(Array.from(new Set(daysWithAppointments)));
+    };
+
+    fetchMonthAppointments();
+  }, [displayMonth, displayYear]);
+
+  //MonthView puts the date in the URL → DayView reads it. 
   const handleDayClick = (day) => {
     if (day !== null) {
       const dateString = new Date(displayYear, displayMonth, day)
@@ -82,6 +117,7 @@ function MonthView() {
                 }`}
               >
                 {day !== null && (
+                  <div className="relative flex flex-col items-center">
                   <div
                     className={`flex items-center justify-center h-8 w-8 text-sm font-medium ${
                       isToday(day)
@@ -91,6 +127,10 @@ function MonthView() {
                   >
                     {day}
                   </div>
+                  {day !== null && appointmentDays.includes(day) && (
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#B87AA0]" />
+                  )}
+                </div>
                 )}
               </div>
             ))}
@@ -101,4 +141,4 @@ function MonthView() {
   );
 }
 
-export default MonthView;
+export default MonthView; // makes this component available to the rest of the app
