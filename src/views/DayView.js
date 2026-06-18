@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { safeFetchJson, jsonHeaders } from '../api';
 
@@ -12,7 +12,12 @@ function DayView() {
 
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const dateKey = displayDate.toISOString().split('T')[0];
+  const dateKey = (() => {
+    const yyyy = displayDate.getFullYear();
+    const mm = String(displayDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(displayDate.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  })();
 
   const [expandedSections, setExpandedSections] = useState({
     appointments: true,
@@ -20,9 +25,11 @@ function DayView() {
     lists: true,
   });
 
-  const [appointments, setAppointments] = useState([]);
+  // Appointments were removed in favor of Events backend.
   const [notes, setNotes] = useState('');
   const [lists, setLists] = useState([]); // [{id, name, items: [{id,text,checked}]}]
+  // Events fetched from backend for this day
+  const [eventsForDay, setEventsForDay] = useState([]);
   const [modalState, setModalState] = useState(null);
   const [newListName, setNewListName] = useState('');
   const [newListInput, setNewListInput] = useState(false);
@@ -31,7 +38,12 @@ function DayView() {
   const [loading, setLoading] = useState(false);
   const noteSaveTimer = useRef(null);
 
+  const DEFAULT_EVENT_COLOR_ID = '#F07878'; // default event color for new Day view events
   const safeArray = (value) => (Array.isArray(value) ? value : []);
+  const parseTimeToDecimal = (value) => {
+    const [hour, minute] = (value || '00:00').split(':').map(Number);
+    return hour + (minute || 0) / 60;
+  };
   const safeNotesValue = (value) => {
     if (value == null) return '';
     if (typeof value === 'object') return value.content || '';
@@ -47,52 +59,7 @@ function DayView() {
     }
   };
 
-  const notificationTimers = useRef([]);
-
-  const clearNotificationTimers = () => {
-    notificationTimers.current.forEach((timerId) => clearTimeout(timerId));
-    notificationTimers.current = [];
-  };
-
-  const scheduleReminderNotification = (title, timeLabel, scheduledTime) => {
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    const delay = scheduledTime.getTime() - Date.now();
-    if (delay <= 0) return;
-    notificationTimers.current.push(
-      window.setTimeout(() => {
-        new Notification(`Reminder: ${title}`, {
-          body: `${timeLabel} — ${scheduledTime.toLocaleString()}`,
-        });
-      }, delay)
-    );
-  };
-
-  const scheduleReminders = (appointmentsList) => {
-    clearNotificationTimers();
-    (Array.isArray(appointmentsList) ? appointmentsList : []).forEach((appointment) => {
-      const appointmentDate = appointment.date ? new Date(appointment.date) : new Date(dateKey);
-      const [hour, minute] = (appointment.time || '09:00').split(':').map(Number);
-      appointmentDate.setHours(hour, minute, 0, 0);
-      const reminders = appointment.reminders || {};
-      if (reminders.week) {
-        const time = new Date(appointmentDate);
-        time.setDate(time.getDate() - 7);
-        scheduleReminderNotification(appointment.title || 'Appointment', '1 week before', time);
-      }
-      if (reminders.day) {
-        const time = new Date(appointmentDate);
-        time.setDate(time.getDate() - 1);
-        scheduleReminderNotification(appointment.title || 'Appointment', '1 day before', time);
-      }
-      if (reminders.min30) {
-        const time = new Date(appointmentDate);
-        time.setMinutes(time.getMinutes() - 30);
-        scheduleReminderNotification(appointment.title || 'Appointment', '30 minutes before', time);
-      }
-    });
-  };
-
-  const getCurrentDayData = () => ({ appointments, notes, lists });
+  // Appointments were removed in favor of Events. getCurrentDayData and currentData cleanup follows.
 
   const toggleSection = (section) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -103,59 +70,40 @@ function DayView() {
   const date = displayDate.getDate();
   const year = displayDate.getFullYear();
 
-  const currentData = getCurrentDayData();
-  const safeAppointments = safeArray(currentData.appointments);
   const safeLists = safeArray(lists);
   const noteValue = notes || '';
 
-  const openAppointmentModal = (appointment = null) => {
-    if (appointment) {
-      const reminders = appointment.reminders || { week: false, day: false, min30: false };
-      setModalState({ mode: 'edit', id: appointment.id, title: appointment.title || '', time: appointment.time || '09:00', reminders });
-    } else {
-      setModalState({ mode: 'create', id: null, title: '', time: '09:00', reminders: { week: false, day: false, min30: false } });
-    }
+  const openEventModal = () => {
+    // Open modal to create a new event
+    setModalState({ mode: 'create', id: null, title: '', time: '09:00', endTime: '10:00' });
   };
 
   const closeModal = () => setModalState(null);
 
-  const saveAppointment = async () => {
+  const saveEvent = async () => {
     if (!modalState || !modalState.title.trim()) return;
     try {
-      if (modalState.mode === 'create') {
-        await fetch(`http://localhost:8080/api/appointments`, {
+      // Create a new backend event using the same body shape as WeekView
+      await safeFetchJson(
+        'http://localhost:8080/api/events',
+        {
           method: 'POST',
           headers: jsonHeaders,
-          body: JSON.stringify({ date: dateKey, title: modalState.title, time: modalState.time, reminders: modalState.reminders }),
-        });
-      } else {
-        await fetch(`http://localhost:8080/api/appointments/${modalState.id}`, {
-          method: 'PUT',
-          headers: jsonHeaders,
-          body: JSON.stringify({ date: dateKey, title: modalState.title, time: modalState.time, reminders: modalState.reminders }),
-        });
-      }
-      await refreshDayData();
+          body: JSON.stringify({
+            day: dateKey,
+            startHour: parseTimeToDecimal(modalState.time),
+            endHour: parseTimeToDecimal(modalState.endTime),
+            title: modalState.title.trim(),
+            colorId: DEFAULT_EVENT_COLOR_ID,
+          }),
+        },
+        null
+      );
+      await fetchEventsForDay();
     } catch (e) {
-      console.error('Failed saving appointment', e);
+      console.error('Failed saving event', e);
     }
     closeModal();
-  };
-
-  const deleteAppointment = async (id) => {
-    try {
-      await fetch(`http://localhost:8080/api/appointments/${id}`, { method: 'DELETE' });
-      await refreshDayData();
-    } catch (e) {
-      console.error('Failed deleting appointment', e);
-    }
-  };
-
-  const toggleReminder = (key) => {
-    setModalState((prev) => ({
-      ...prev,
-      reminders: { ...prev.reminders, [key]: !prev.reminders[key] },
-    }));
   };
 
   const updateNotes = (text) => {
@@ -245,27 +193,73 @@ function DayView() {
     }
   };
 
-  const refreshDayData = async () => {
+  const refreshDayData = useCallback(async () => {
     setLoading(true);
     try {
-      const [notesRes, aptsRes, listsRes] = await Promise.all([
+      const [notesRes, listsRes] = await Promise.all([
         fetch(`http://localhost:8080/api/notes?date=${dateKey}`),
-        fetch(`http://localhost:8080/api/appointments?date=${dateKey}`),
         fetch(`http://localhost:8080/api/lists?date=${dateKey}`),
       ]);
       const notesJson = await safeJson(notesRes, null);
-      const aptsJson = await safeJson(aptsRes, []);
       const listsJson = await safeJson(listsRes, []);
       setNotes(safeNotesValue(notesJson));
-      const safeApts = safeArray(aptsJson);
-      setAppointments(safeApts);
       setLists(safeArray(listsJson));
-      scheduleReminders(safeApts);
     } catch (e) {
       console.error('Failed fetching day data', e);
     }
     setLoading(false);
+  }, [dateKey]); // Wrap in useCallback to provide stable function identity
+
+  const fetchEventsForDay = useCallback(async (shouldSetState = true) => {
+    try {
+      const eventsFromApi = await safeFetchJson(
+        `http://localhost:8080/api/events?start=${dateKey}&end=${dateKey}`,
+        {},
+        []
+      );
+      const safeEvents = Array.isArray(eventsFromApi) ? eventsFromApi : [];
+      const [selectedYear, selectedMonth, selectedDay] = dateKey.split('-').map(Number);
+      const selectedDayKey = toLocalDateKey(new Date(selectedYear, selectedMonth - 1, selectedDay));
+      // Filter events by comparing the "day" field (YYYY-MM-DD string) directly
+      // to the selected day's dateKey. Do not parse as Date (avoids UTC shifts).
+      const matched = safeEvents.filter((ev) => ev && ev.day === selectedDayKey);
+      if (shouldSetState) setEventsForDay(matched);
+    } catch (err) {
+      console.error('Failed fetching events for day', err);
+      if (shouldSetState) setEventsForDay([]);
+    }
+  }, [dateKey]); // Wrap in useCallback to provide stable function identity
+
+  // --- Helpers to format event times and local YYYY-MM-DD strings ---
+  // Format a decimal hour (e.g. 9.5) into a localized time string
+  const formatTime = (hourValue) => {
+    const whole = Math.floor(hourValue);
+    const minutes = hourValue % 1 === 0 ? 0 : 30;
+    const date = new Date();
+    date.setHours(whole, minutes, 0, 0);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
+
+  // Format start/end hour numbers into a single range string
+  const formatRange = (startHour, endHour) => `${formatTime(startHour)} - ${formatTime(endHour)}`;
+
+  // Build a local YYYY-MM-DD string from a Date using local year/month/day
+  const toLocalDateKey = (dateObj) => {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // --- Fetch backend Events for this date when `dateKey` changes ---
+  // Runs only when the primitive `dateKey` changes (prevents infinite loop)
+  useEffect(() => {
+    let mounted = true;
+    fetchEventsForDay(mounted);
+    return () => {
+      mounted = false;
+    };
+  }, [dateKey, fetchEventsForDay]); // Added fetchEventsForDay to dependency array (now stable via useCallback)
 
   // Fetch data when dateKey changes
   useEffect(() => {
@@ -277,10 +271,9 @@ function DayView() {
     fetchData();
     return () => {
       mounted = false;
-      clearNotificationTimers();
       if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current);
     };
-  }, [dateKey]);
+  }, [dateKey, refreshDayData]); // Added refreshDayData to dependency array (now stable via useCallback)
 
   return (
     <div className="bg-peach min-h-screen p-8">
@@ -291,7 +284,8 @@ function DayView() {
             <span className="text-white text-4xl font-bold">{date}</span>
           </div>
           <div>
-            <h1 className="text-5xl font-bold text-darktext">{dayName}</h1>
+            {/* Responsive heading sizing keeps long day names readable on phones. */}
+            <h1 className="text-3xl font-bold leading-tight text-darktext sm:text-4xl md:text-5xl">{dayName}</h1>
             <p className="text-lg text-darktext mt-2">
               {monthName} {date}, {year}
             </p>
@@ -304,46 +298,31 @@ function DayView() {
               <div className="bg-coral rounded-lg p-3">
                 <span className="text-white text-xl">📋</span>
               </div>
-              <h2 className="text-xl font-semibold text-darktext">Appointments & Meetings</h2>
+              <h2 className="text-xl font-semibold text-darktext">Events</h2>
             </div>
             <button className="text-mauve font-bold text-2xl">{expandedSections.appointments ? '−' : '+'}</button>
           </div>
           {expandedSections.appointments && (
             <div className="border-t border-gray-100 px-6 py-8 bg-cream bg-opacity-30">
               {loading ? (
-                <p className="text-center text-gray-400 mb-6">Loading appointments…</p>
-              ) : safeAppointments.length === 0 ? (
-                <p className="text-center text-gray-600 mb-6">No appointments today. Enjoy your day! 💚</p>
+                <p className="text-center text-gray-400 mb-6">Loading events…</p>
+              ) : eventsForDay.length === 0 ? (
+                <p className="text-center text-gray-600 mb-6">No events scheduled today. 💚</p>
               ) : (
                 <div className="space-y-3 mb-6">
-                  {safeAppointments.map((apt) => (
-                    <div key={apt.id} className="bg-white rounded-2xl p-4 flex justify-between items-start">
+                  {eventsForDay.map((ev) => (
+                    <div key={ev.id} className="bg-white rounded-2xl p-4 flex justify-between items-start">
                       <div className="flex-1">
-                        <p className="font-semibold text-darktext">{apt.title}</p>
-                        <p className="text-sm text-gray-600">{apt.time}</p>
-                        {(apt.reminders.week || apt.reminders.day || apt.reminders.min30) && (
-                          <div className="flex gap-2 mt-2">
-                            {apt.reminders.week && <span className="text-xs bg-mauve text-white px-2 py-1 rounded">1 week</span>}
-                            {apt.reminders.day && <span className="text-xs bg-mauve text-white px-2 py-1 rounded">1 day</span>}
-                            {apt.reminders.min30 && <span className="text-xs bg-mauve text-white px-2 py-1 rounded">30 min</span>}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2 ml-3">
-                        <button onClick={() => openAppointmentModal(apt)} className="text-mauve hover:text-[#a5648f]">
-                          ✏️
-                        </button>
-                        <button onClick={() => deleteAppointment(apt.id)} className="text-coral hover:text-[#d55c5c]">
-                          🗑️
-                        </button>
+                        <p className="font-semibold text-darktext">{ev.title}</p>
+                        <p className="text-sm text-gray-600">{formatRange(ev.startHour, ev.endHour)}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
               <div className="text-center">
-                <button onClick={() => openAppointmentModal()} className="text-coral font-semibold text-sm hover:text-mauve">
-                  + Add appointment
+                <button onClick={openEventModal} className="text-coral font-semibold text-sm hover:text-mauve">
+                  + Add event
                 </button>
               </div>
             </div>
@@ -473,36 +452,28 @@ function DayView() {
               onChange={(e) => setModalState((prev) => ({ ...prev, title: e.target.value }))}
               className="w-full rounded-2xl border border-transparent bg-white/80 px-4 py-3 text-sm text-darktext outline-none focus:border-mauve focus:ring-2 focus:ring-mauve/20 mb-4"
             />
-            <label className="block text-sm font-medium text-darktext mb-2">Start time</label>
-            <input
-              type="time"
-              value={modalState.time}
-              onChange={(e) => setModalState((prev) => ({ ...prev, time: e.target.value }))}
-              className="w-full rounded-2xl border border-transparent bg-white/80 px-4 py-3 text-sm text-darktext outline-none focus:border-mauve focus:ring-2 focus:ring-mauve/20 mb-4"
-            />
-            <label className="block text-sm font-medium text-darktext mb-3">Reminders</label>
-            <div className="flex gap-2 mb-6">
-              <button
-                onClick={() => toggleReminder('week')}
-                className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition ${modalState.reminders.week ? 'bg-mauve text-white border-mauve' : 'border-mauve text-mauve'}`}
-              >
-                1 week before
-              </button>
-              <button
-                onClick={() => toggleReminder('day')}
-                className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition ${modalState.reminders.day ? 'bg-mauve text-white border-mauve' : 'border-mauve text-mauve'}`}
-              >
-                1 day before
-              </button>
-              <button
-                onClick={() => toggleReminder('min30')}
-                className={`px-3 py-2 rounded-lg text-sm font-medium border-2 transition ${modalState.reminders.min30 ? 'bg-mauve text-white border-mauve' : 'border-mauve text-mauve'}`}
-              >
-                30 min before
-              </button>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-darktext mb-2">Start time</label>
+                <input
+                  type="time"
+                  value={modalState.time}
+                  onChange={(e) => setModalState((prev) => ({ ...prev, time: e.target.value }))}
+                  className="w-full rounded-2xl border border-transparent bg-white/80 px-4 py-3 text-sm text-darktext outline-none focus:border-mauve focus:ring-2 focus:ring-mauve/20"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-darktext mb-2">End time</label>
+                <input
+                  type="time"
+                  value={modalState.endTime}
+                  onChange={(e) => setModalState((prev) => ({ ...prev, endTime: e.target.value }))}
+                  className="w-full rounded-2xl border border-transparent bg-white/80 px-4 py-3 text-sm text-darktext outline-none focus:border-mauve focus:ring-2 focus:ring-mauve/20"
+                />
+              </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={saveAppointment} className="flex-1 rounded-lg bg-mauve px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#a5648f]">
+              <button onClick={saveEvent} className="flex-1 rounded-lg bg-mauve px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#a5648f]">
                 Save
               </button>
               <button onClick={closeModal} className="flex-1 rounded-lg bg-gray-200 px-4 py-3 text-sm font-semibold text-darktext transition hover:bg-gray-300">

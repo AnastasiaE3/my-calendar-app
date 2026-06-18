@@ -6,7 +6,7 @@ function MonthView() {
   const params = useParams();
   const navigate = useNavigate(); // sending user to a different page when i click on something
   const today = new Date();
-  const [appointmentDays, setAppointmentDays] = useState([]);
+  const [eventsByDay, setEventsByDay] = useState({});
 
   //a ternary operator to get month and year from URL params or use current month and year.
   // Get month and year from URL params or use current month/year
@@ -19,6 +19,14 @@ function MonthView() {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const dayHeaders = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+  // Shared local date-key builder (YYYY-MM-DD) keeps date comparisons timezone-safe.
+  const toLocalDateKey = (dateObj) => {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateObj.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
 
   // Get first day of month (0 = Sunday, need to adjust for Monday start)
   // creats the first date of the month and asks what day of the week it falls on. This tells us how many empty cells to add before the 1st.
@@ -54,52 +62,60 @@ function MonthView() {
   };
 
   useEffect(() => {
-    const fetchMonthAppointments = async () => {
-      const appointments = await safeFetchJson(
-        `http://localhost:8080/api/appointments?month=${displayMonth}&year=${displayYear}`,
+    // Fetch month events from the same endpoint used by Week/Day views.
+    const fetchMonthEvents = async () => {
+      const monthStart = toLocalDateKey(new Date(displayYear, displayMonth, 1));
+      const monthEnd = toLocalDateKey(new Date(displayYear, displayMonth + 1, 0));
+      const events = await safeFetchJson(
+        `http://localhost:8080/api/events?start=${monthStart}&end=${monthEnd}`,
         {},
         []
       );
-      const daysWithAppointments = Array.isArray(appointments)
-        ? appointments
-            .map((apt) => {
-              if (!apt || !apt.date) return null;
-              const date = new Date(apt.date);
-              if (Number.isNaN(date.getTime())) return null;
-              return date.getDate();
-            })
-            .filter((day) => typeof day === 'number')
-        : [];
-      setAppointmentDays(Array.from(new Set(daysWithAppointments)));
+
+      const grouped = (Array.isArray(events) ? events : []).reduce((acc, event) => {
+        if (!event || typeof event.day !== 'string') return acc;
+        const [y, m, d] = event.day.split('-').map(Number);
+        if (!y || !m || !d) return acc;
+
+        const eventDayKey = toLocalDateKey(new Date(y, m - 1, d));
+        if (!acc[eventDayKey]) acc[eventDayKey] = [];
+        acc[eventDayKey].push(event.colorId || '#F07878');
+        return acc;
+      }, {});
+
+      setEventsByDay(grouped);
     };
 
-    fetchMonthAppointments();
+    fetchMonthEvents();
   }, [displayMonth, displayYear]);
 
   //MonthView puts the date in the URL → DayView reads it. 
   const handleDayClick = (day) => {
     if (day !== null) {
-      const dateString = new Date(displayYear, displayMonth, day)
-        .toISOString()
-        .split('T')[0];
+      const date = new Date(displayYear, displayMonth, day);
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      const dateString = `${yyyy}-${mm}-${dd}`;
       navigate(`/day/${dateString}`);
     }
   };
 
   return (
-    <div className="bg-peach min-h-screen p-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="bg-peach min-h-screen p-6 md:p-8">
+      <div className="max-w-7xl mx-auto">
         <h2 className="text-4xl font-bold text-darktext mb-8">
           {monthNames[displayMonth]} {displayYear}
         </h2>
 
-        <div className="bg-white bg-opacity-95 rounded-3xl shadow-lg p-8">
-          {/* Day Headers */}
-          <div className="grid grid-cols-7 gap-0 mb-6">
+        {/* Match Week view container palette/shadow while slightly enlarging the calendar area. */}
+        <div className="rounded-3xl bg-[#FFF6E9] p-6 shadow-[0_20px_60px_rgba(61,43,31,0.12)] md:p-8">
+          {/* Header and day cells share the same 7-column layout for exact alignment. */}
+          <div className="mb-2 grid w-full grid-cols-7 gap-0">
             {dayHeaders.map((day) => (
               <div
                 key={day}
-                className="text-center text-sm font-semibold text-mauve uppercase tracking-wider pb-4"
+                className="py-2 text-center text-sm font-semibold uppercase text-mauve md:py-3 md:text-base"
               >
                 {day}
               </div>
@@ -107,30 +123,41 @@ function MonthView() {
           </div>
 
           {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-0">
+          <div className="grid w-full grid-cols-7 gap-0">
             {days.map((day, index) => (
               <div
                 key={index}
                 onClick={() => handleDayClick(day)}
-                className={`aspect-video flex items-start justify-start p-4 border-b border-r border-gray-100 last:border-r-0 ${
+                // Keep each date centered in its exact weekday column with no left offset.
+                className={`min-h-[60px] p-0 sm:min-h-[72px] md:min-h-[110px] lg:min-h-[130px] ${
                   day !== null ? 'cursor-pointer hover:bg-cream transition-colors' : ''
                 }`}
               >
                 {day !== null && (
-                  <div className="relative flex flex-col items-center">
-                  <div
-                    className={`flex items-center justify-center h-8 w-8 text-sm font-medium ${
-                      isToday(day)
-                        ? 'bg-mauve text-white rounded-full font-semibold'
-                        : 'text-darktext'
-                    }`}
-                  >
-                    {day}
+                  <div className="flex h-full w-full flex-col items-center justify-start gap-1 py-2">
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center text-sm font-medium md:h-10 md:w-10 md:text-base ${
+                        isToday(day)
+                          ? 'bg-mauve text-white rounded-full font-semibold'
+                          : 'text-darktext'
+                      }`}
+                    >
+                      {day}
+                    </div>
+                    {/* Render one tidy color dot per event for this day (same colorId as event). */}
+                    <div className="flex max-w-full flex-wrap items-center justify-center gap-1 px-1 pb-1">
+                      {(() => {
+                        const dayKey = toLocalDateKey(new Date(displayYear, displayMonth, day));
+                        return (eventsByDay[dayKey] || []).map((eventColor, dotIndex) => (
+                          <span
+                            key={`${dayKey}-${dotIndex}`}
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ backgroundColor: eventColor }}
+                          />
+                        ));
+                      })()}
+                    </div>
                   </div>
-                  {day !== null && appointmentDays.includes(day) && (
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#B87AA0]" />
-                  )}
-                </div>
                 )}
               </div>
             ))}
