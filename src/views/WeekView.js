@@ -46,6 +46,18 @@ function WeekView() {
     return `${yyyy}-${mm}-${dd}`;
   })();
 
+  // Parse "YYYY-MM-DD" as local midnight (avoid Date(string), which treats it as UTC).
+  const parseLocalDateString = (dateStr) => {
+    const parts = (dateStr || '').split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      return new Date(y, m, d);
+    }
+    return new Date(dateStr);
+  };
+
   const formatTime = (hourValue) => {
     const whole = Math.floor(hourValue);
     const minutes = hourValue % 1 === 0 ? 0 : 30;
@@ -110,7 +122,7 @@ function WeekView() {
   };
 
   const displayDateString = params.date || todayString;
-  let displayDate = new Date(displayDateString);
+  let displayDate = parseLocalDateString(displayDateString);
   if (Number.isNaN(displayDate.getTime())) {
     displayDate = today;
   }
@@ -139,7 +151,7 @@ function WeekView() {
   const hourLabels = visibleHours.map((hour) => `${String(hour).padStart(2, '0')}:00`);
 
   const isToday = (dateString) => {
-    const date = new Date(dateString);
+    const date = parseLocalDateString(dateString);
     return (
       date.getDate() === today.getDate() &&
       date.getMonth() === today.getMonth() &&
@@ -151,9 +163,9 @@ function WeekView() {
 
   // Stable range builder for fetch callback dependency tracking.
   const getWeekRange = useCallback(() => {
-    let baseDate = new Date(displayDateString);
+    let baseDate = parseLocalDateString(displayDateString);
     if (Number.isNaN(baseDate.getTime())) {
-      baseDate = new Date(todayString);
+      baseDate = parseLocalDateString(todayString);
     }
 
     const weekStart = new Date(baseDate);

@@ -5,9 +5,21 @@ import { safeFetchJson, jsonHeaders, API_BASE } from '../api';
 function DayView() {
   const params = useParams();
 
+  // Parse "YYYY-MM-DD" as local midnight (avoid Date(string), which treats it as UTC).
+  const parseLocalDateString = (dateStr) => {
+    const parts = (dateStr || '').split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      return new Date(y, m, d);
+    }
+    return new Date(dateStr);
+  };
+
   let displayDate = new Date();
   if (params.date) {
-    displayDate = new Date(params.date);
+    displayDate = parseLocalDateString(params.date);
   }
 
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
