@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { safeFetchJson } from '../api';
+import { safeFetchJson, API_BASE } from '../api';
 
 function MonthView() {
   const params = useParams();
@@ -67,7 +67,7 @@ function MonthView() {
       const monthStart = toLocalDateKey(new Date(displayYear, displayMonth, 1));
       const monthEnd = toLocalDateKey(new Date(displayYear, displayMonth + 1, 0));
       const events = await safeFetchJson(
-        `http://localhost:8080/api/events?start=${monthStart}&end=${monthEnd}`,
+        `${API_BASE}/events?start=${monthStart}&end=${monthEnd}`,
         {},
         []
       );

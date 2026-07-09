@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { safeFetchJson, jsonHeaders } from '../api';
+import { safeFetchJson, jsonHeaders, API_BASE } from '../api';
 
 const colorOptions = [
   {
@@ -173,7 +173,7 @@ function WeekView() {
   const fetchWeekEvents = useCallback(async () => {
     const { start, end } = getWeekRange();
     const eventsFromApi = await safeFetchJson(
-      `http://localhost:8080/api/events?start=${start}&end=${end}`,
+      `${API_BASE}/events?start=${start}&end=${end}`,
       {},
       []
     );
@@ -220,7 +220,7 @@ function WeekView() {
 
     try {
       if (modalState.mode === 'edit' && modalState.eventId) {
-        await fetch(`http://localhost:8080/api/events/${modalState.eventId}`, {
+        await fetch(`${API_BASE}/events/${modalState.eventId}`, {
           method: 'PUT',
           headers: jsonHeaders,
           body: JSON.stringify({
@@ -233,7 +233,7 @@ function WeekView() {
         });
       } else {
         const created = await safeFetchJson(
-          'http://localhost:8080/api/events',
+          `${API_BASE}/events`,
           {
             method: 'POST',
             headers: jsonHeaders,
@@ -262,7 +262,7 @@ function WeekView() {
   const deleteEvent = async () => {
     if (!modalState?.eventId) return;
     try {
-      await fetch(`http://localhost:8080/api/events/${modalState.eventId}`, {
+      await fetch(`${API_BASE}/events/${modalState.eventId}`, {
         method: 'DELETE',
       });
     } catch (error) {

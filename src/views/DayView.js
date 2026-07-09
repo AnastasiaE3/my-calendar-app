@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { safeFetchJson, jsonHeaders } from '../api';
+import { safeFetchJson, jsonHeaders, API_BASE } from '../api';
 
 function DayView() {
   const params = useParams();
@@ -85,7 +85,7 @@ function DayView() {
     try {
       // Create a new backend event using the same body shape as WeekView
       await safeFetchJson(
-        'http://localhost:8080/api/events',
+        `${API_BASE}/events`,
         {
           method: 'POST',
           headers: jsonHeaders,
@@ -111,7 +111,7 @@ function DayView() {
     if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current);
     noteSaveTimer.current = setTimeout(async () => {
       try {
-        await fetch('http://localhost:8080/api/notes', {
+        await fetch(`${API_BASE}/notes`, {
           method: 'POST',
           headers: jsonHeaders,
           body: JSON.stringify({ date: dateKey, content: text }),
@@ -125,7 +125,7 @@ function DayView() {
   const createNewList = async () => {
     if (!newListName.trim()) return;
     try {
-      await fetch('http://localhost:8080/api/lists', {
+      await fetch(`${API_BASE}/lists`, {
         method: 'POST',
         headers: jsonHeaders,
         body: JSON.stringify({ date: dateKey, name: newListName }),
@@ -140,7 +140,7 @@ function DayView() {
 
   const deleteList = async (listId) => {
     try {
-      await fetch(`http://localhost:8080/api/lists/${listId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/lists/${listId}`, { method: 'DELETE' });
       await refreshDayData();
     } catch (e) {
       console.error('Failed deleting list', e);
@@ -150,7 +150,7 @@ function DayView() {
   const addItemToList = async (listId, itemText) => {
     if (!itemText.trim()) return;
     try {
-      await fetch(`http://localhost:8080/api/lists/${listId}/items`, {
+      await fetch(`${API_BASE}/lists/${listId}/items`, {
         method: 'POST',
         headers: jsonHeaders,
         body: JSON.stringify({ text: itemText }),
@@ -173,7 +173,7 @@ function DayView() {
       if (!list) return;
       const item = (list.items || []).find((it) => it.id === itemId);
       if (!item) return;
-      await fetch(`http://localhost:8080/api/lists/items/${itemId}`, {
+      await fetch(`${API_BASE}/lists/items/${itemId}`, {
         method: 'PUT',
         headers: jsonHeaders,
         body: JSON.stringify({ checked: !item.checked }),
@@ -186,7 +186,7 @@ function DayView() {
 
   const deleteItem = async (listId, itemId) => {
     try {
-      await fetch(`http://localhost:8080/api/lists/items/${itemId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/lists/items/${itemId}`, { method: 'DELETE' });
       await refreshDayData();
     } catch (e) {
       console.error('Failed deleting item', e);
@@ -197,8 +197,8 @@ function DayView() {
     setLoading(true);
     try {
       const [notesRes, listsRes] = await Promise.all([
-        fetch(`http://localhost:8080/api/notes?date=${dateKey}`),
-        fetch(`http://localhost:8080/api/lists?date=${dateKey}`),
+        fetch(`${API_BASE}/notes?date=${dateKey}`),
+        fetch(`${API_BASE}/lists?date=${dateKey}`),
       ]);
       const notesJson = await safeJson(notesRes, null);
       const listsJson = await safeJson(listsRes, []);
@@ -213,7 +213,7 @@ function DayView() {
   const fetchEventsForDay = useCallback(async (shouldSetState = true) => {
     try {
       const eventsFromApi = await safeFetchJson(
-        `http://localhost:8080/api/events?start=${dateKey}&end=${dateKey}`,
+        `${API_BASE}/events?start=${dateKey}&end=${dateKey}`,
         {},
         []
       );
